@@ -1,0 +1,72 @@
+- hosts: minecraft
+  become: yes
+  tasks:
+    - name: Install prerequisites
+      yum:
+        name:
+          - curl
+          - tar
+        state: present
+        update_cache: yes
+
+    - name: Download Corretto 21
+      get_url:
+        url: https://corretto.aws/downloads/latest/amazon-corretto-21-x64-linux-jdk.tar.gz
+        dest: /tmp/corretto.tar.gz
+
+    - name: Extract Corretto 21
+      unarchive:
+        src: /tmp/corretto.tar.gz
+        dest: /opt/corretto-21
+        remote_src: yes
+        extra_opts: [--strip-components=1]
+
+    - name: Register Corretto 21 as default java
+      alternatives:
+        name: java
+        path: /opt/corretto-21/bin/java
+        link: /usr/bin/java
+        priority: 2000
+
+
+    - name: Create minecraft directory
+      file:
+        path: /home/ec2-user/minecraft
+        state: directory
+        owner: ec2-user
+
+    - name: Download Minecraft server jar
+      get_url:
+        url: https://piston-data.mojang.com/v1/objects/e6ec2f64e6080b9b5d9b471b291c33cc7f509733/server.jar
+        dest: /home/ec2-user/minecraft/minecraft_server.jar
+        owner: ec2-user
+
+    - name: Accept the EULA
+      copy:
+        dest: /home/ec2-user/minecraft/eula.txt
+        content: "eula=true\n"
+        owner: ec2-user
+
+    - name: Create systemd unit for Minecraft
+      copy:
+        dest: /etc/systemd/system/minecraft.service
+        content: |
+          [Unit]
+          Description=Minecraft Server
+          After=network.target
+
+          [Service]
+          User=ec2-user
+          WorkingDirectory=/home/ec2-user/minecraft
+          ExecStart=/usr/bin/java -Xmx1G -Xms1G -jar minecraft_server.jar nogui
+          Restart=on-failure
+
+          [Install]
+          WantedBy=multi-user.target
+
+    - name: Reload systemd and start Minecraft service
+      systemd:
+        daemon_reload: yes
+        name: minecraft
+        state: started
+        enabled: yes
